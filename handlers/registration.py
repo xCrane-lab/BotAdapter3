@@ -1,13 +1,12 @@
 from aiogram import Router, F, types
 from aiogram.types import Message
 from Text.Text_Ru import TEXT_RU
-from aiogram.filters import Command, StateFilter, Text
-from aiogram.filters.state import State, StatesGroup
+from aiogram.filters import Command, StateFilter, Text, CommandObject
 from aiogram.fsm.state import default_state
 from aiogram.fsm.context import FSMContext
 from admins import list_admins
 from FSM.States import Registr
-from Database.user import con, cur, Ncon, Ncur
+from Database.user import con, cur
 from bot import bot
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -33,66 +32,41 @@ async def process_cancel_command(message: Message):
 
 
 @router.message(Command(commands=['registration']), StateFilter(default_state))
-async def name(message: Message, state: FSMContext):
+async def name(message: Message, state: FSMContext, command: CommandObject):
     user_id = str(message.from_user.id)
     if user_id not in list_admins:
         user.append(message.from_user.id)
         await message.answer(text=TEXT_RU['name'])
         await state.set_state(Registr.fill_name)
     else:
-        Ncur.execute("SELECT * FROM users;")
-        base = Ncur.fetchall()
-        lbase = len(base)
-        await message.answer(text=f"У вас есть {lbase} пользователей, которые ждут подтверждения регистрации.")
-        for i in base:
-            builder = InlineKeyboardBuilder()
-            builder.add(types.InlineKeyboardButton(
-                text="Да",
-                callback_data="yes")
-            )
-            builder.add(types.InlineKeyboardButton(
-                text="Нет",
-                callback_data="no")
-            )
-            await message.answer(
-                f"Нажмите на кнопку, чтобы подтвердить или отказать в регистрации Адаптера:"
-                f"\n<b>ФИО:</b> {i[1]}"
-                f"\n<b>Номер группы:</b> {i[2]}",
-                reply_markup=builder.as_markup()
-            )
+        data = command.args.split(', ')
+        userid, fullname, group = data
+        builder = InlineKeyboardBuilder()
+        builder.add(types.InlineKeyboardButton(
+            text="Да",
+            callback_data=f'reg_yes_{userid}')
+        )
+        builder.add(types.InlineKeyboardButton(
+            text="Нет",
+            callback_data=f'reg_no_{userid}')
+        )
+        await message.answer(
+            f"Нажмите на кнопку, чтобы подтвердить или отказать в регистрации Адаптера:"
+            f"\n<b>ФИО:</b> {fullname}"
+            f"\n<b>Номер группы:</b> {group}",
+            reply_markup=builder.as_markup()
+        )
 
-
-@router.callback_query(Text("yes"))
-async def yes(callback: types.CallbackQuery):
-    Ncur.execute("SELECT * FROM users;")
-    base = Ncur.fetchall()
-    user_id = base[0][0]
-    cur.execute("INSERT INTO users VALUES(?, ?, ?);", tuple(base[0]))
-    con.commit()
-    await bot.send_message(chat_id=user_id, text=TEXT_RU['ConA'])
-    await callback.answer(
-        text=TEXT_RU['ConfR'],
-        show_alert=True
-    )
-    Ncur.execute("SELECT * FROM users;")
-    base = Ncur.fetchall()
-    Ncur.execute("DELETE FROM users WHERE id=VALUES(?);", base[0][0])
-    Ncon.commit()
-
-
-
-@router.callback_query(Text("no"))
-async def no(callback: types.CallbackQuery):
-    Ncur.execute("SELECT * FROM users;")
-    base = Ncur.fetchall()
-    user_id = base[0][0]
-    Ncur.execute("DELETE FROM users WHERE id=VALUES(?);", base[0][0])
-    Ncon.commit()
-    await bot.send_message(chat_id=user_id, text=TEXT_RU['FCon'])
-    await callback.answer(
-        text=TEXT_RU['FConfR'],
-        show_alert=True
-    )
+@router.callback_query(lambda c: 'reg' in c.data)
+async def sign_up(callback: types.CallbackQuery):
+    if 'yes' in callback.data:
+        user_id = callback.data.split('_')[2]
+        cur.execute('''insert into users values (?);''', [user_id])
+        con.commit()
+        await bot.send_message(chat_id=user_id, text=TEXT_RU['ConA'])
+    elif 'no' in callback.data:
+        user_id = callback.data.split('_')[2]
+        await bot.send_message(chat_id=user_id, text=['FCon'])
 
 
 @router.message(StateFilter(Registr.fill_name), F.text)
@@ -116,9 +90,8 @@ async def process_name_sent(message: Message, state: FSMContext):
     await message.answer(text=TEXT_RU['MFC'])
     for admin in list_admins:
         await bot.send_message(chat_id=admin, text=f"Пользователь {user[1]} из группы {user[2]} запрашивает регистрацию." \
-                                                    f"Пропиши тут, как подтвердить эту хуету, пожалуйста")
-    Ncur.execute("INSERT INTO users VALUES(?, ?, ?);", tuple(user))
-    Ncon.commit()
+                                                   f"\nЧтобы подтвердить регистрацию или отказать в ней"
+                                                   f"\nПропишите команду /registration {user[0]}, {user[1]}, {user[2]}")
     await state.clear()
 
 
