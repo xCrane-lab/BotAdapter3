@@ -17,9 +17,11 @@ async def start(message: Message):
     cur.execute("SELECT * FROM users;")
     base = cur.fetchall()
     base = [i[0] for i in base]
-    if message.from_user.id not in base:
-        await message.answer(text=TEXT_RU['reg'])
-    elif user_id not in list_admins:
-        await message.answer(TEXT_RU['start'])
-    else:
+    if user_id in list_admins:
         await message.answer(TEXT_RU['Astart'])
+    elif message.from_user.id not in base:
+        await message.answer(text=TEXT_RU['reg'])
+    else:
+        await message.answer(TEXT_RU['start'])
+
+
